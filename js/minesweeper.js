@@ -17,6 +17,10 @@ arcade.minesweeper.prototype.height;
 arcade.minesweeper.prototype.number_mines;
 arcade.minesweeper.prototype.mine_counter;
 arcade.minesweeper.prototype.mouse = { left: false, right: false };
+arcade.minesweeper.prototype.correct_mines;
+arcade.minesweeper.prototype.timer_interval;
+arcade.minesweeper.prototype.face;
+arcade.minesweeper.prototype.game_active;
 
 arcade.minesweeper.prototype.build = function (width, height) {
     this.play_table = $.createElement("table")
@@ -210,38 +214,99 @@ arcade.minesweeper.prototype.build = function (width, height) {
     td_header_center.appendChild(header_table);
 };
 
+arcade.minesweeper.prototype.mark_tile = function (tile, forceFlag) {
+    const is_tile_revealed = tile.is_revealed();
+    if (is_tile_revealed) {
+        return;
+    }
+    const was_tile_flagged = tile.get_state() === "flag";
+
+    let is_tile_flagged = false;
+    if (forceFlag) {
+        tile.set_state("flag");
+        is_tile_flagged = true;
+    } else {
+        is_tile_flagged = tile.mark() === "flag";
+    }
+
+    if (is_tile_flagged) {
+        this.mine_counter.decrement();
+        if (tile.is_a_mine()) {
+            this.correct_mines++;
+        }
+    } else if (was_tile_flagged) {
+        this.mine_counter.increment();
+        if (tile.is_a_mine()) {
+            this.correct_mines--;
+        }
+    }
+
+    this.check_game_end(tile);
+};
+
+arcade.minesweeper.prototype.check_game_end = function (tile) {
+    if (this.correct_mines !== this.number_mines) {
+        return;
+    }
+    const total_revealed_and_flagged = this.correct_mines + this.grid.revealed_tiles;
+    if (total_revealed_and_flagged < this.grid.number_tiles) {
+        return;
+    }
+    this.grid.reveal_grid(tile);
+    this.end_game(true);
+}
+
+arcade.minesweeper.prototype.end_game = function (success) {
+    this.game_active = false;
+    clearInterval(this.timer_interval);
+    if (success) {
+        this.face.set_state("sunglasses");
+    } else {
+        this.face.set_state("dead");
+    }
+};
+
 arcade.minesweeper.prototype.new_game = function (width, height, number_mines) {
     var self = this;
 
     this.width = width;
     this.height = height;
     this.number_mines = number_mines;
+    this.correct_mines = 0;
 
     this.play_area.innerHTML("");
 
     this.build(width, height);
 
-    var face = new arcade.minesweeper.face(this, this.header_td_face);
+    this.face = new arcade.minesweeper.face(this, this.header_td_face);
 
     this.play_table.removeEventListener("mousedown,mouseup").style({ cursor: "default", border: "1px solid #444" });
     this.play_table
         .addEventListener("mousedown", function (e) {
-            if (e.target === face.get_element()) return false;
-            if (e.which === 1) face.set_state("scared");
-        })
+            if (e.target === this.face.get_element()) return false;
+            if (!this.game_active) {
+                return;
+            }
+            if (e.which === 1) this.face.set_state("scared");
+        }.bind(this))
         .addEventListener("mouseup", function (e) {
-            face.set_state("smile");
-        });
+            if (!this.game_active) {
+                return;
+            }
+            this.face.set_state("smile");
+        }.bind(this));
 
     this.mine_counter = new arcade.minesweeper.ssd(this.header_td_mine_count, number_mines);
-    var timer = new arcade.minesweeper.ssd(this.header_td_timer, 0);
 
-    setInterval(function () {
+    var timer = new arcade.minesweeper.ssd(this.header_td_timer, 0);
+    this.timer_interval = setInterval(function () {
         timer.increment();
     }, 1000);
 
-    this.grid = new arcade.minesweeper.grid(this, this.grid_area, width, height, face);
+    this.grid = new arcade.minesweeper.grid(this, this.grid_area, width, height, this.face);
     this.grid.generate(number_mines);
+
+    this.game_active = true;
 };
 arcade.minesweeper.prototype.restart = function () {
     this.new_game(this.width, this.height, this.number_mines);
@@ -266,6 +331,10 @@ $.ready(function () {
 
     $(document)
         .addEventListener("mousedown", function (e) {
+            if (!minesweeper.game_active) {
+                return;
+            }
+
             if (e.which == 1) minesweeper.mouse.left = true;
             else if (e.which == 3) minesweeper.mouse.right = true;
             if (e.target.nodeName !== "TD") return false;
@@ -275,9 +344,7 @@ $.ready(function () {
 
             // On right click, mark the tile if the right mouse is the only button down
             if (minesweeper.mouse.right && !minesweeper.mouse.left) {
-                var state = tile.mark();
-                if (state === "flag") minesweeper.mine_counter.decrement();
-                else if (state === "question") minesweeper.mine_counter.increment();
+                minesweeper.mark_tile(tile, false);
             }
 
             // On left click OR if I have both mouse buttons down
@@ -302,6 +369,7 @@ $.ready(function () {
             }
         })
         .addEventListener("mouseup", function (e) {
+
             if (e.target.nodeName !== "TD") {
                 if (e.which == 1) minesweeper.mouse.left = false;
                 else if (e.which == 3) minesweeper.mouse.right = false;
@@ -350,11 +418,11 @@ $.ready(function () {
                                     minesweeper.grid.highlighted_tiles[i].get_element()
                                 );
                                 minesweeper.grid.reveal_area(coordinates.x, coordinates.y);
+                                minesweeper.check_game_end(minesweeper.grid.highlighted_tiles[i]);
                             }
                         } else if (total_flagged_and_unrevealed === mine_count) {
                             for (var i in unflagged_tiles) {
-                                unflagged_tiles[i].set_state("flag");
-                                minesweeper.mine_counter.decrement();
+                                minesweeper.mark_tile(unflagged_tiles[i], true);
                             }
                             flag_count = mine_count;
                         }
@@ -366,7 +434,12 @@ $.ready(function () {
                     }
                 } else {
                     // Single tile reveals are simple
-                    minesweeper.grid.reveal_area(click_coordinates.x, click_coordinates.y);
+                    const failed = minesweeper.grid.reveal_area(click_coordinates.x, click_coordinates.y);
+                    if (failed) {
+                        minesweeper.end_game(false);
+                        return;
+                    }
+                    minesweeper.check_game_end(minesweeper.grid.tiles[click_coordinates.x][click_coordinates.y]);
                 }
 
                 // Clear highlighted tile array
@@ -375,5 +448,5 @@ $.ready(function () {
             if (e.which == 1) minesweeper.mouse.left = false;
             else if (e.which == 3) minesweeper.mouse.right = false;
         })
-        .addEventListener("keydown", function () {});
+        .addEventListener("keydown", function () { });
 });
