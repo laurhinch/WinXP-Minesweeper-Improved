@@ -317,25 +317,46 @@ $.ready(function () {
                     return false;
                 }
 
-                // If I'm trying the quick reveal, do a couple of checks to make sure that all the mines are marked or don't reveal.
+                // If I'm trying the quick reveal, do a couple of checks to make sure that all the mines are marked or obvious.
                 if (minesweeper.mouse.left && minesweeper.mouse.right) {
-                    // Get the number of flagged tiles
+                    // Get the number of flagged and unflagged tiles
+                    const is_highlighted_revealed =
+                        minesweeper.grid.tiles[click_coordinates.x][click_coordinates.y].is_revealed();
+                    const mine_count =
+                        minesweeper.grid.tiles[click_coordinates.x][click_coordinates.y].get_mine_count();
                     var flag_count = 0;
+                    var unflagged_count = 0;
+                    var unflagged_tiles = [];
+                    // Count all flags and unrevealed unflagged tiles
                     for (var i in minesweeper.grid.highlighted_tiles) {
-                        if (minesweeper.grid.highlighted_tiles[i].get_state() === "flag") flag_count++;
+                        if (minesweeper.grid.highlighted_tiles[i].get_state() === "flag") {
+                            flag_count++;
+                        } else if (minesweeper.grid.highlighted_tiles[i].is_revealed() === false) {
+                            unflagged_count++;
+                            unflagged_tiles.push(minesweeper.grid.highlighted_tiles[i]);
+                        }
                     }
 
-                    // Compare. If all the mines are marked, reveal each of the surrounding tiles
+                    const total_flagged_and_unrevealed = flag_count + unflagged_count;
+
+                    // Compare. If all the mines are marked or obvious, reveal each of the surrounding tiles
                     if (
-                        flag_count ==
-                            minesweeper.grid.tiles[click_coordinates.x][click_coordinates.y].get_mine_count() &&
-                        minesweeper.grid.tiles[click_coordinates.x][click_coordinates.y].is_revealed()
+                        (flag_count === mine_count || total_flagged_and_unrevealed === mine_count) &&
+                        is_highlighted_revealed
                     ) {
-                        for (var i in minesweeper.grid.highlighted_tiles) {
-                            var coordinates = minesweeper.grid.get_coordinates_from_td(
-                                minesweeper.grid.highlighted_tiles[i].get_element()
-                            );
-                            minesweeper.grid.reveal_area(coordinates.x, coordinates.y);
+                        if (flag_count === mine_count) {
+                            for (var i in minesweeper.grid.highlighted_tiles) {
+                                var coordinates = minesweeper.grid.get_coordinates_from_td(
+                                    minesweeper.grid.highlighted_tiles[i].get_element()
+                                );
+                                minesweeper.grid.reveal_area(coordinates.x, coordinates.y);
+                            }
+                        } else if (total_flagged_and_unrevealed === mine_count) {
+                            for (var i in unflagged_tiles) {
+                                unflagged_tiles[i].set_state("flag");
+                                minesweeper.mine_counter.decrement();
+                            }
+                            flag_count = mine_count;
                         }
                     } else {
                         // If not all of the tiles are marked and we're not revealing, unhighlight all of the tiles.
