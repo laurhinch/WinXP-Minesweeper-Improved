@@ -6,4 +6,4 @@ Improved with game end states, new color pallette, smart tile clearing with left
 
 I may make a branch with just the end states and tile clearing to PR into the original repo.
 
-Demo: https://lauren.github.io/minesweeper-improved/
+Demo: https://laurhinch.github.io/minesweeper-improved/
